@@ -18,7 +18,6 @@ phases:
   post_build:
     commands:
       - echo Pushing image to ECR...
-      - docker push $ECR_REPO_URI:latest
       - docker push $ECR_REPO_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION
       - echo Writing imagedefinitions.json...
       - printf '[{"name":"%s","imageUri":"%s"}]' $CONTAINER_NAME $ECR_REPO_URI:latest > imagedefinitions.json

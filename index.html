@@ -1,10 +1,203 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-  <title>App DevOps</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CI/CD explicado</title>
+<style>
+  :root { --bg:#0f1419; --card:#18202a; --fg:#e6edf3; --muted:#8b98a5; --ok:#3fb950; --err:#f85149; --warn:#d29922; --run:#58a6ff; --line:#2a3542; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.6 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 860px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  h1 { font-size: 2rem; margin: 0 0 .25rem; }
+  h2 { margin-top: 2.5rem; font-size: 1.3rem; border-bottom: 1px solid var(--line); padding-bottom: .4rem; }
+  p.lead, .muted { color: var(--muted); }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 1rem; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; }
+  .card h3 { margin:.1rem 0 .4rem; font-size:1.05rem; }
+  code, pre { font-family: ui-monospace, Menlo, monospace; font-size: .85rem; }
+  pre { background:#0b0f14; border:1px solid var(--line); border-radius:8px; padding:1rem; overflow:auto; }
+  .pipeline { display:flex; flex-wrap:wrap; gap:.5rem; margin: 1rem 0; }
+  .stage { flex:1 1 110px; background:var(--card); border:2px solid var(--line); border-radius:10px; padding:.7rem .5rem; text-align:center; transition: border-color .2s, background .2s; }
+  .stage .name { font-weight:600; }
+  .stage .state { font-size:.78rem; color:var(--muted); }
+  .stage[data-status="running"] { border-color: var(--run); }
+  .stage[data-status="success"] { border-color: var(--ok); }
+  .stage[data-status="failed"]  { border-color: var(--err); background:#2a1618; }
+  .stage[data-status="manual"]  { border-color: var(--warn); }
+  .stage[data-status="skipped"] { opacity:.45; }
+  .controls { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; margin:1rem 0; }
+  button { background:var(--run); color:#04121f; border:0; border-radius:8px; padding:.55rem 1.1rem; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.secondary { background:var(--warn); color:#1c1400; }
+  select { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:.4rem; }
+  #status { min-height:1.6rem; font-weight:600; }
+  #log { list-style:none; padding:0; margin:.5rem 0 0; font-family: ui-monospace, monospace; font-size:.85rem; color:var(--muted); }
+  [hidden] { display:none !important; }
+</style>
 </head>
 <body>
-  <h1>Version 1.0 - CI/CD con AWS</h1>
-  <p>Desplegado automaticamente con CodePipeline + ECS Fargate V final zzz</p>
+<main>
+  <h1>CI/CD en 5 minutos</h1>
+  <p class="lead">Automatizar el camino que recorre el código desde el <code>git push</code> hasta producción.</p>
+
+  <h2>Qué es cada letra</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>CI · Integración continua</h3>
+      <p>Cada cambio se integra en la rama principal con frecuencia y dispara automáticamente <strong>build + tests</strong>. Detecta errores en minutos, no en semanas.</p>
+    </div>
+    <div class="card">
+      <h3>CD · Entrega continua</h3>
+      <p>Cada versión que pasa CI queda <strong>lista para desplegar</strong>. El paso a producción es una decisión humana (botón de aprobación).</p>
+    </div>
+    <div class="card">
+      <h3>CD · Despliegue continuo</h3>
+      <p>Igual que la entrega, pero el despliegue a producción es <strong>100 % automático</strong> si todo está en verde.</p>
+    </div>
+  </div>
+
+  <h2>Simulador de pipeline</h2>
+  <p class="muted">Ejecuta el pipeline, inyecta un test que falla y compara entrega vs. despliegue continuo.</p>
+  <div class="controls">
+    <label>Modo
+      <select id="mode">
+        <option value="deployment">Despliegue continuo</option>
+        <option value="delivery">Entrega continua</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="fail-test"> Inyectar test fallido</label>
+    <button id="run">▶ Ejecutar pipeline</button>
+    <button id="approve" class="secondary" hidden>Aprobar y desplegar a producción</button>
+  </div>
+  <div class="pipeline" id="pipeline"></div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <ul id="log"></ul>
+
+  <h2>Ejemplo real (GitHub Actions)</h2>
+<pre><code>name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    environment: production   # aprobación manual = entrega continua
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./scripts/deploy.sh</code></pre>
+
+  <h2>Buenas prácticas</h2>
+  <ul>
+    <li>Pipelines rápidos (&lt; 10 min): si tardan, nadie los espera.</li>
+    <li>Un build, muchos entornos: promueve el mismo artefacto de staging a producción.</li>
+    <li>Rollback fácil y despliegues pequeños y frecuentes.</li>
+    <li>Secretos en el gestor de CI, nunca en el repo.</li>
+  </ul>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const STAGES = [
+    { id: 'commit',     name: 'Commit' },
+    { id: 'build',      name: 'Build' },
+    { id: 'test',       name: 'Test' },
+    { id: 'package',    name: 'Package' },
+    { id: 'staging',    name: 'Staging' },
+    { id: 'production', name: 'Producción' },
+  ];
+
+  /** Calcula el resultado final de cada etapa (función pura, sin DOM). */
+  function planRun({ failAt = null, mode = 'deployment' } = {}) {
+    let broken = false;
+    return STAGES.map(({ id }) => {
+      if (broken) return { id, status: 'skipped' };
+      if (id === failAt) { broken = true; return { id, status: 'failed' }; }
+      if (id === 'production' && mode === 'delivery') return { id, status: 'manual' };
+      return { id, status: 'success' };
+    });
+  }
+
+  const $ = (sel) => document.querySelector(sel);
+  const LABELS = { pending: 'pendiente', running: 'en curso…', success: 'ok', failed: 'falló', skipped: 'omitida', manual: 'espera aprobación' };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const delay = () => (typeof window.CICD_DELAY === 'number' ? window.CICD_DELAY : 600);
+
+  function setStage(id, status) {
+    const el = document.querySelector(`[data-stage="${id}"]`);
+    el.dataset.status = status;
+    el.querySelector('.state').textContent = LABELS[status];
+  }
+
+  function log(msg) {
+    const li = document.createElement('li');
+    li.textContent = msg;
+    $('#log').appendChild(li);
+  }
+
+  function render() {
+    $('#pipeline').innerHTML = STAGES.map((s) =>
+      `<div class="stage" data-stage="${s.id}" data-status="pending">
+         <div class="name">${s.name}</div><div class="state">${LABELS.pending}</div>
+       </div>`).join('');
+    $('#status').textContent = '';
+    $('#log').innerHTML = '';
+    $('#approve').hidden = true;
+  }
+
+  async function run() {
+    const runBtn = $('#run');
+    runBtn.disabled = true;
+    render();
+    const plan = planRun({
+      failAt: $('#fail-test').checked ? 'test' : null,
+      mode: $('#mode').value,
+    });
+
+    for (const { id, status } of plan) {
+      if (status === 'skipped') { setStage(id, 'skipped'); continue; }
+      setStage(id, 'running');
+      await sleep(delay());
+      setStage(id, status);
+      log(`${id}: ${LABELS[status]}`);
+    }
+
+    const last = plan.find((p) => p.status === 'failed');
+    const manual = plan.find((p) => p.status === 'manual');
+    if (last) $('#status').textContent = `❌ Pipeline detenido en «${last.id}». Nada llegó a producción.`;
+    else if (manual) { $('#status').textContent = '⏸ Listo para desplegar: falta la aprobación humana.'; $('#approve').hidden = false; }
+    else $('#status').textContent = '✅ Desplegado a producción automáticamente.';
+    runBtn.disabled = false;
+  }
+
+  function approve() {
+    $('#approve').hidden = true;
+    setStage('production', 'success');
+    log('production: aprobado y desplegado');
+    $('#status').textContent = '✅ Desplegado a producción tras la aprobación.';
+  }
+
+  $('#run').addEventListener('click', () => { window.CICD.lastRun = run(); });
+  $('#approve').addEventListener('click', approve);
+  render();
+
+  window.CICD = { STAGES, planRun, lastRun: Promise.resolve() };
+})();
+</script>
 </body>
 </html>
